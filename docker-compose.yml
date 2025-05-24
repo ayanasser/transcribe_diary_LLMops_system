@@ -1,0 +1,297 @@
+services:
+  # Infrastructure Services
+  redis:
+    image: redis:7-alpine
+    container_name: transcription-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - transcription-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: transcription-postgres
+    environment:
+      POSTGRES_DB: transcription_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    networks:
+      - transcription-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d transcription_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Application Services
+  ingestion-api:
+    build:
+      context: ./services/ingestion-api
+      target: ${BUILD_TARGET:-development}
+    container_name: transcription-ingestion-api
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - DATABASE_URL=postgresql://user:password@postgres:5432/transcription_db
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_PATH=/app/storage
+      - RATE_LIMIT_REQUESTS_PER_MINUTE=60
+      - RATE_LIMIT_REQUESTS_PER_HOUR=1000
+      - MONITORING_LOG_LEVEL=INFO
+    volumes:
+      - shared_storage:/app/storage
+      - ./shared:/app/shared:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - transcription-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  job-status-api:
+    build:
+      context: ./services/job-status-api
+      target: ${BUILD_TARGET:-development}
+    container_name: transcription-job-status-api
+    ports:
+      - "8001:8001"
+    environment:
+      - REDIS_HOST=redis
+      - DATABASE_URL=postgresql://user:password@postgres:5432/transcription_db
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_PATH=/app/storage
+      - MONITORING_LOG_LEVEL=INFO
+    volumes:
+      - shared_storage:/app/storage
+      - ./shared:/app/shared:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - transcription-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  transcription-worker:
+    build:
+      context: ./services/transcription-worker
+      target: ${BUILD_TARGET:-development}
+    environment:
+      - REDIS_HOST=redis
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_PATH=/app/storage
+      - WHISPER_CACHE_DIR=/app/whisper_cache
+      - WHISPER_DEVICE=cpu
+      - MONITORING_LOG_LEVEL=INFO
+    volumes:
+      - shared_storage:/app/storage
+      - whisper_cache:/app/whisper_cache
+      - ./shared:/app/shared:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - transcription-net
+    deploy:
+      replicas: 2
+
+  # GPU-enabled transcription worker (optional)
+  transcription-worker-gpu:
+    build:
+      context: ./services/transcription-worker
+      target: gpu
+    container_name: transcription-worker-gpu
+    environment:
+      - REDIS_HOST=redis
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_PATH=/app/storage
+      - WHISPER_CACHE_DIR=/app/whisper_cache
+      - WHISPER_DEVICE=cuda
+      - MONITORING_LOG_LEVEL=INFO
+    volumes:
+      - shared_storage:/app/storage
+      - whisper_cache:/app/whisper_cache
+      - ./shared:/app/shared:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - transcription-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    profiles:
+      - gpu
+
+  llm-worker:
+    build:
+      context: ./services/llm-worker
+      target: ${BUILD_TARGET:-development}
+    environment:
+      - REDIS_HOST=redis
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_PATH=/app/storage
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=gpt-3.5-turbo
+      - OPENAI_MAX_TOKENS=1000
+      - OPENAI_TEMPERATURE=0.2
+      - MONITORING_LOG_LEVEL=INFO
+    volumes:
+      - shared_storage:/app/storage
+      - ./shared:/app/shared:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - transcription-net
+    deploy:
+      replicas: 2
+
+  # Monitoring Services
+  prometheus:
+    image: prom/prometheus:v2.40.0
+    container_name: transcription-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - transcription-net
+
+  grafana:
+    image: grafana/grafana:9.3.0
+    container_name: transcription-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infrastructure/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    restart: unless-stopped
+    networks:
+      - transcription-net
+    depends_on:
+      - prometheus
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: transcription-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./infrastructure/monitoring/otel/collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8889:8889"   # Prometheus exporter
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    restart: unless-stopped
+    networks:
+      - transcription-net
+    depends_on:
+      - prometheus
+      - jaeger
+
+  # Jaeger - Distributed Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: transcription-jaeger
+    ports:
+      - "16686:16686"  # UI
+      - "14268:14268"  # Collector HTTP
+      - "14250:14250"  # Collector gRPC
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
+    networks:
+      - transcription-net
+
+  # Load Balancer (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: transcription-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - ingestion-api
+      - job-status-api
+    restart: unless-stopped
+    networks:
+      - transcription-net
+    profiles:
+      - production
+
+volumes:
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  shared_storage:
+    driver: local
+  whisper_cache:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  transcription-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

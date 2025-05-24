@@ -1,0 +1,42 @@
+# Docker Compose override for faster development builds
+# Use: docker-compose -f docker-compose.yml -f docker-compose.fast.yml build
+# Or: COMPOSE_FILE=docker-compose.yml:docker-compose.fast.yml docker-compose build
+
+x-build-cache: &build-cache
+  cache_from:
+    - python:3.11-slim
+  args:
+    BUILDKIT_INLINE_CACHE: "1"
+
+services:
+  ingestion-api:
+    build:
+      <<: *build-cache
+      cache_from:
+        - ${REGISTRY:-}ingestion-api:latest
+        - ${REGISTRY:-}ingestion-api:buildcache
+        - python:3.11-slim
+
+  job-status-api:
+    build:
+      <<: *build-cache
+      cache_from:
+        - ${REGISTRY:-}job-status-api:latest
+        - ${REGISTRY:-}job-status-api:buildcache
+        - python:3.11-slim
+
+  transcription-worker:
+    build:
+      <<: *build-cache
+      cache_from:
+        - ${REGISTRY:-}transcription-worker:latest
+        - ${REGISTRY:-}transcription-worker:buildcache
+        - python:3.11-slim
+
+  llm-worker:
+    build:
+      <<: *build-cache
+      cache_from:
+        - ${REGISTRY:-}llm-worker:latest
+        - ${REGISTRY:-}llm-worker:buildcache
+        - python:3.11-slim

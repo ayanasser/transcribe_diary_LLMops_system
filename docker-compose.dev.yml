@@ -1,0 +1,66 @@
+# Docker Compose override for ultra-fast development
+# This configuration uses bind mounts for instant code changes
+# Use: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  ingestion-api:
+    build:
+      target: development
+    volumes:
+      # Bind mount source code for instant changes
+      - ./services/ingestion-api:/app:cached
+      - ./shared:/app/shared:cached
+      # Use named volume for Python cache to persist across rebuilds
+      - ingestion_cache:/root/.cache/pip
+    environment:
+      - PYTHONPATH=/app
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+    command: ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=8000", "--reload"]
+
+  job-status-api:
+    build:
+      target: development
+    volumes:
+      - ./services/job-status-api:/app:cached
+      - ./shared:/app/shared:cached
+      - job_status_cache:/root/.cache/pip
+    environment:
+      - PYTHONPATH=/app
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+    command: ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=8001", "--reload"]
+
+  transcription-worker:
+    build:
+      target: development
+    volumes:
+      - ./services/transcription-worker:/app:cached
+      - ./shared:/app/shared:cached
+      - transcription_cache:/root/.cache/pip
+      - whisper_cache:/app/whisper_cache
+    environment:
+      - PYTHONPATH=/app
+      - WHISPER_CACHE_DIR=/app/whisper_cache
+    # Keep default command for worker
+
+  llm-worker:
+    build:
+      target: development
+    volumes:
+      - ./services/llm-worker:/app:cached
+      - ./shared:/app/shared:cached
+      - llm_cache:/root/.cache/pip
+    environment:
+      - PYTHONPATH=/app
+    # Keep default command for worker
+
+volumes:
+  ingestion_cache:
+    driver: local
+  job_status_cache:
+    driver: local
+  transcription_cache:
+    driver: local
+  llm_cache:
+    driver: local

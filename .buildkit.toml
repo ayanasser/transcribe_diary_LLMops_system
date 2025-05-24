@@ -1,0 +1,28 @@
+# BuildKit configuration for optimal build performance
+# Place in ~/.docker/buildx/config.toml or set via environment
+
+[buildkit]
+  # Enable experimental features
+  experimental = true
+
+[cache]
+  # Enable registry cache
+  enabled = true
+  
+[registry]
+  # Configure registry mirrors for faster image pulls
+  "docker.io" = ["mirror.gcr.io", "registry-1.docker.io"]
+
+[network]
+  # Enable host networking for faster builds
+  mode = "host"
+
+[features]
+  # Enable advanced features
+  buildkit = true
+  inline-cache = true
+  multi-platform = true
+
+# Example usage:
+# export BUILDKIT_CONFIG=/path/to/this/file
+# docker buildx create --use --config /path/to/this/file
