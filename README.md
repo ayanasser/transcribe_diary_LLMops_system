@@ -109,6 +109,28 @@ A production-grade, scalable ML inference pipeline that processes audio files, t
 
 ## Self-Hosted GitHub Actions Runners
 
+This project includes a complete setup for self-hosted GitHub Actions runners optimized for ML workflows:
+
+```bash
+# Set up a new runner
+make runner-setup
+
+# Start/stop the runner service
+make runner-start
+make runner-stop
+
+# Check runner status
+make runner-status
+
+# Update runner
+make runner-update
+
+# Install ML dependencies
+make runner-install-deps
+```
+
+For detailed instructions, see [MLOps Runner Setup Guide](docs/mlops-runner-setup-guide.md)
+
 This project supports self-hosted GitHub Actions runners, which offer several benefits:
 
 - **Custom Hardware**: Use your own hardware resources for CI/CD
