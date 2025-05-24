@@ -127,9 +127,18 @@ make runner-update
 
 # Install ML dependencies
 make runner-install-deps
+
+# Test runner setup (dry run mode)
+make runner-test
+
+# Check runner health
+make runner-health
+
+# Validate workflow files
+make validate-workflows
 ```
 
-For detailed instructions, see [MLOps Runner Setup Guide](docs/mlops-runner-setup-guide.md)
+For detailed instructions, see [MLOps Runner Setup Guide](docs/mlops-runner-setup-guide.md) and [Runner Troubleshooting Guide](docs/runner-troubleshooting-guide.md)
 
 This project supports self-hosted GitHub Actions runners, which offer several benefits:
 

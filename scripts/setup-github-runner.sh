@@ -37,6 +37,7 @@ GITHUB_REPO="transcribe_diary_LLMops_system"
 RUNNER_NAME="mlops-runner-$(hostname)"
 RUNNER_LABELS="self-hosted,linux,x64,mlops,docker"
 RUNNER_DIR="$HOME/github-runner"
+DRY_RUN=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -180,14 +181,50 @@ EOF
     print_status "Systemd service created and enabled."
 }
 
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            --help)
+                echo "Usage: $0 [OPTIONS]"
+                echo "Options:"
+                echo "  --dry-run    Test the setup process without actually installing"
+                echo "  --help       Show this help message"
+                exit 0
+                ;;
+            *)
+                print_error "Unknown option: $1"
+                echo "Use --help to see available options"
+                exit 1
+                ;;
+        esac
+    done
+}
+
 # Main execution
 main() {
     print_status "Starting GitHub Actions Self-Hosted Runner setup..."
     
+    if [ "$DRY_RUN" = true ]; then
+        print_warning "DRY RUN MODE: No changes will be made to your system"
+    fi
+    
     check_dependencies
-    install_mlops_dependencies
-    configure_runner
-    create_service
+    
+    if [ "$DRY_RUN" = false ]; then
+        install_mlops_dependencies
+        configure_runner
+        create_service
+    else
+        print_status "[DRY RUN] Would install MLOps dependencies"
+        print_status "[DRY RUN] Would configure runner with name: $RUNNER_NAME"
+        print_status "[DRY RUN] Would configure labels: $RUNNER_LABELS"
+        print_status "[DRY RUN] Would create systemd service"
+    fi
     
     print_status "Setup completed successfully!"
     echo
@@ -202,5 +239,6 @@ main() {
     print_warning "Remember to update your workflow files to use 'runs-on: self-hosted'"
 }
 
-# Run main function
-main "$@"
+# Parse arguments and run main function
+parse_args "$@"
+main

@@ -1,4 +1,4 @@
-.PHONY: help setup build start stop restart logs clean test integration-test lint format build-fast build-optimized build-dev build-performance runner-setup runner-start runner-stop runner-status runner-update
+.PHONY: help setup build start stop restart logs clean test integration-test lint format build-fast build-optimized build-dev build-performance runner-setup runner-start runner-stop runner-status runner-update runner-test runner-health runner-install-deps validate-workflows
 
 # Default target
 help:
@@ -30,6 +30,10 @@ help:
 	@echo "  runner-stop    - Stop runner service"
 	@echo "  runner-status  - Check runner status"
 	@echo "  runner-update  - Update runner to latest version"
+	@echo "  runner-test    - Test runner setup (dry-run)"
+	@echo "  runner-health  - Check runner health status"
+	@echo "  runner-install-deps - Install ML dependencies"
+	@echo "  validate-workflows - Validate workflow files for runners"
 
 # Setup development environment
 setup:
@@ -197,3 +201,23 @@ runner-install-deps:
 	@echo "Installing MLOps dependencies for runner..."
 	@sudo chmod +x scripts/install-mlops-deps.sh
 	@sudo ./scripts/install-mlops-deps.sh
+	
+runner-test:
+	@echo "Testing GitHub runner setup (dry run)..."
+	@chmod +x scripts/setup-github-runner.sh
+	@./scripts/setup-github-runner.sh --dry-run
+	@echo "Testing runner management commands (dry run)..."
+	@chmod +x scripts/manage-runner.sh
+	@./scripts/manage-runner.sh status --dry-run
+	@chmod +x scripts/update-runner.sh
+	@./scripts/update-runner.sh --dry-run
+	
+runner-health:
+	@echo "Running GitHub runner health check..."
+	@chmod +x scripts/runner-health-check.sh
+	@./scripts/runner-health-check.sh
+	
+validate-workflows:
+	@echo "Validating GitHub workflow files..."
+	@chmod +x scripts/validate-workflows.sh
+	@./scripts/validate-workflows.sh
