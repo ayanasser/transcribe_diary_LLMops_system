@@ -1,0 +1,192 @@
+# MIT License
+# Copyright (c) 2025 Aya Nasser
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+name: Self-Hosted Runner Basic Workflow
+
+# This simplified workflow runs on self-hosted runners without requiring cloud credentials
+# It's great for environments where you have limited resources or no cloud deployment
+
+on:
+  push:
+    branches: [ develop ]
+  pull_request:
+    branches: [ develop, staging, main ]
+  workflow_dispatch:
+
+env:
+  DOCKER_REGISTRY: ghcr.io
+  DOCKER_IMAGE_PREFIX: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: [self-hosted, linux]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Configure environment
+        run: |
+          if [ -f "/home/aya/mlops_assessment/scripts/runner-env.sh" ]; then
+            source /home/aya/mlops_assessment/scripts/runner-env.sh
+            echo "Runner environment loaded"
+          fi
+          
+      - name: Set up Python
+        run: |
+          # Use system Python if available (self-hosted runner)
+          if command -v python3 &> /dev/null; then
+            echo "Using system Python"
+            python3 -m venv .venv
+            source .venv/bin/activate
+            echo "Python version: $(python3 --version)"
+          else
+            echo "ERROR: Python 3 not found on self-hosted runner"
+            exit 1
+          fi
+          
+      - name: Install dependencies
+        run: |
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pylint black isort
+          
+          # Install project dependencies
+          if [ -f "requirements.txt" ]; then 
+            pip install -r requirements.txt
+          fi
+          
+          find ./services -name "requirements.txt" -exec pip install -r {} \;
+          find ./shared -name "requirements.txt" -exec pip install -r {} \; || true
+      
+      - name: Run linting
+        run: |
+          source .venv/bin/activate
+          black --check --diff .
+          isort --check-only --profile black .
+          pylint --disable=C0111,C0103,C0303,C0330,C0326 --ignore=tests/ --ignore=env/ . || echo "Linting completed with warnings"
+      
+      - name: Run tests
+        run: |
+          source .venv/bin/activate
+          pytest --cov=. --cov-report=xml
+          
+  build-and-deploy:
+    name: Build and Deploy
+    needs: test
+    runs-on: [self-hosted, linux]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Build Docker images
+        run: |
+          # Check Docker availability
+          if ! command -v docker &> /dev/null; then
+            echo "ERROR: Docker not found on self-hosted runner"
+            exit 1
+          fi
+          
+          # Use optimized build script
+          cd /home/aya/mlops_assessment
+          bash scripts/build-optimized.sh
+          
+      - name: Deploy based on branch
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          cd /home/aya/mlops_assessment
+          
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            echo "Deploying production environment"
+            docker-compose -f docker-compose.yml up -d
+          elif [[ "$GITHUB_REF" == "refs/heads/staging" ]]; then
+            echo "Deploying staging environment"
+            docker-compose -f docker-compose.dev.yml up -d
+          else
+            echo "Branch not configured for deployment"
+          fi
+          
+      - name: Run health checks
+        run: |
+          cd /home/aya/mlops_assessment
+          bash scripts/health-check.sh || echo "Some services may still be starting up"
+          
+      - name: Update deployment status
+        run: |
+          echo "Deployment completed at $(date)"
+          
+  performance-test:
+    name: Performance Testing
+    runs-on: [self-hosted, linux]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-and-deploy
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Configure environment
+        run: |
+          source .venv/bin/activate || python3 -m venv .venv && source .venv/bin/activate
+          
+      - name: Install benchmark dependencies
+        run: |
+          source .venv/bin/activate
+          pip install pytest pytest-benchmark memory_profiler psutil
+          
+      - name: Check for GPU
+        id: check-gpu
+        run: |
+          if command -v nvidia-smi &> /dev/null; then
+            echo "GPU available"
+            echo "has_gpu=true" >> $GITHUB_OUTPUT
+            nvidia-smi
+          else
+            echo "No GPU detected, running CPU-only tests"
+            echo "has_gpu=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Run performance tests
+        run: |
+          source .venv/bin/activate
+          cd /home/aya/mlops_assessment
+          
+          # Run appropriate tests based on hardware
+          if [[ "${{ steps.check-gpu.outputs.has_gpu }}" == "true" ]]; then
+            echo "Running GPU-accelerated performance tests"
+            python -m pytest tests/performance/ -k "gpu" -v || echo "GPU tests completed with some issues"
+          else
+            echo "Running CPU performance tests"
+            python -m pytest tests/performance/ -k "not gpu" -v || echo "CPU tests completed with some issues"
+          fi
+          
+      - name: Generate performance report
+        run: |
+          echo "Performance test results as of $(date)" > performance_report.txt
+          echo "Hardware configuration:" >> performance_report.txt
+          lscpu | head -20 >> performance_report.txt
+          echo -e "\nMemory:" >> performance_report.txt
+          free -h >> performance_report.txt
+          echo -e "\nTest results summary available in CI logs" >> performance_report.txt

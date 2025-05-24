@@ -1,4 +1,4 @@
-.PHONY: help setup build start stop restart logs clean test integration-test lint format build-fast build-optimized build-dev build-performance
+.PHONY: help setup build start stop restart logs clean test integration-test lint format build-fast build-optimized build-dev build-performance runner-setup runner-start runner-stop runner-status runner-update
 
 # Default target
 help:
@@ -23,6 +23,13 @@ help:
 	@echo "  lint           - Run linting"
 	@echo "  format         - Format code"
 	@echo "  status         - Show service status"
+	@echo ""
+	@echo "GitHub Runner Commands:"
+	@echo "  runner-setup   - Set up GitHub self-hosted runner"
+	@echo "  runner-start   - Start runner service"
+	@echo "  runner-stop    - Stop runner service"
+	@echo "  runner-status  - Check runner status"
+	@echo "  runner-update  - Update runner to latest version"
 
 # Setup development environment
 setup:
@@ -151,46 +158,42 @@ status:
 	@echo "Service Status:"
 	@docker-compose ps
 
-# Development helpers
-dev-api:
-	@echo "Starting API services only..."
-	docker-compose up -d redis postgres ingestion-api job-status-api
+# Clean up Docker resources and remove cache files
+clean-all: clean
+	@echo "Cleaning up all development resources..."
+	@find . -type d -name __pycache__ -exec rm -rf {} +
+	@find . -type d -name .pytest_cache -exec rm -rf {} +
+	@find . -type d -name .coverage -exec rm -rf {} +
+	@find . -type f -name "*.pyc" -delete
+	@echo "All cleaned up!"
 
-dev-workers:
-	@echo "Starting worker services..."
-	docker-compose up -d transcription-worker llm-worker
+# GitHub Runner Commands
+runner-setup:
+	@echo "Setting up GitHub self-hosted runner..."
+	@chmod +x scripts/setup-github-runner.sh
+	@./scripts/setup-github-runner.sh
 
-# Submit a test job
-test-job:
-	@echo "Submitting a test job..."
-	@curl -X POST http://localhost:8000/jobs \
-		-H "Content-Type: application/json" \
-		-d '{"audio_url": "https://www2.cs.uic.edu/~i101/SoundFiles/BabyElephantWalk60.wav", "priority": "medium"}' \
-		| jq '.'
+runner-start:
+	@echo "Starting GitHub runner service..."
+	@chmod +x scripts/manage-runner.sh
+	@./scripts/manage-runner.sh start
 
-# Check job status (requires JOB_ID environment variable)
-check-job:
-	@if [ -z "$(JOB_ID)" ]; then \
-		echo "Please provide JOB_ID: make check-job JOB_ID=your-job-id"; \
-	else \
-		curl -s http://localhost:8001/jobs/$(JOB_ID) | jq '.'; \
-	fi
+runner-stop:
+	@echo "Stopping GitHub runner service..."
+	@chmod +x scripts/manage-runner.sh
+	@./scripts/manage-runner.sh stop
 
-# Monitor metrics
-metrics:
-	@echo "Opening monitoring dashboards..."
-	@echo "Prometheus: http://localhost:9090"
-	@echo "Grafana: http://localhost:3000"
+runner-status:
+	@echo "Checking GitHub runner status..."
+	@chmod +x scripts/manage-runner.sh
+	@./scripts/manage-runner.sh status
 
-# Production deployment
-deploy-prod:
-	@echo "Deploying to production..."
-	@export BUILD_TARGET=production && docker-compose --profile production up -d
+runner-update:
+	@echo "Updating GitHub runner..."
+	@chmod +x scripts/update-runner.sh
+	@./scripts/update-runner.sh
 
-# Backup data
-backup:
-	@echo "Creating backup..."
-	@mkdir -p backups/$(shell date +%Y%m%d_%H%M%S)
-	@docker-compose exec postgres pg_dump -U user transcription_db > backups/$(shell date +%Y%m%d_%H%M%S)/database.sql
-	@docker run --rm -v transcription_shared_storage:/data -v $(PWD)/backups/$(shell date +%Y%m%d_%H%M%S):/backup busybox tar czf /backup/storage.tar.gz -C /data .
-	@echo "Backup created in backups/$(shell date +%Y%m%d_%H%M%S)/"
+runner-install-deps:
+	@echo "Installing MLOps dependencies for runner..."
+	@sudo chmod +x scripts/install-mlops-deps.sh
+	@sudo ./scripts/install-mlops-deps.sh

@@ -107,6 +107,30 @@ A production-grade, scalable ML inference pipeline that processes audio files, t
 - ✅ Kubernetes manifests for cloud deployment
 - ✅ Terraform infrastructure for GCP
 
+## Self-Hosted GitHub Actions Runners
+
+This project supports self-hosted GitHub Actions runners, which offer several benefits:
+
+- **Custom Hardware**: Use your own hardware resources for CI/CD
+- **GPU Access**: Run ML workloads with GPU acceleration
+- **Persistent Cache**: Speed up builds with locally cached dependencies
+- **Cost Savings**: No GitHub-hosted minutes consumption
+
+### Quick Setup:
+
+```bash
+# Install the self-hosted runner
+make runner-setup
+
+# Start the runner service
+make runner-start
+
+# Check runner status
+make runner-status
+```
+
+For detailed instructions, see [MLOps Runner Setup Guide](docs/mlops-runner-setup-guide.md)
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
