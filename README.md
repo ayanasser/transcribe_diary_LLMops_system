@@ -106,3 +106,26 @@ A production-grade, scalable ML inference pipeline that processes audio files, t
 - ✅ Comprehensive test suite (unit and integration tests)
 - ✅ Kubernetes manifests for cloud deployment
 - ✅ Terraform infrastructure for GCP
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## Support
+
+If you encounter any issues or have questions, please:
+1. Check the [documentation](docs/)
+2. Search existing [issues](https://github.com/ayanasser/transcribe_diary_LLMops_system/issues)
+3. Create a new issue if needed
+
+---
+
+**Built with ❤️ for scalable MLOps workflows**
