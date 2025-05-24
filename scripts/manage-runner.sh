@@ -26,6 +26,7 @@
 
 RUNNER_DIR="$HOME/github-runner"
 SERVICE_NAME="github-runner"
+DRY_RUN=false
 
 # Colors
 GREEN='\033[0;32m'
@@ -46,7 +47,7 @@ print_warning() {
 }
 
 show_usage() {
-    echo "Usage: $0 {start|stop|restart|status|logs|remove}"
+    echo "Usage: $0 {start|stop|restart|status|logs|remove} [--dry-run]"
     echo ""
     echo "Commands:"
     echo "  start   - Start the GitHub runner service"
@@ -55,6 +56,9 @@ show_usage() {
     echo "  status  - Show runner service status"
     echo "  logs    - Show runner logs (follow mode)"
     echo "  remove  - Remove and unregister the runner"
+    echo ""
+    echo "Options:"
+    echo "  --dry-run  - Test commands without actually executing them"
     echo ""
 }
 
@@ -155,25 +159,78 @@ remove_runner() {
     fi
 }
 
+# Parse command line arguments
+parse_args() {
+    COMMAND=$1
+    shift
+    
+    if [[ $# -gt 0 ]]; then
+        case "$1" in
+            --dry-run)
+                DRY_RUN=true
+                ;;
+            *)
+                print_error "Unknown option: $1"
+                show_usage
+                exit 1
+                ;;
+        esac
+    fi
+}
+
 # Main script logic
-case "$1" in
+COMMAND=$1
+shift
+parse_args "$COMMAND" "$@"
+
+if [ "$DRY_RUN" = true ]; then
+    print_warning "DRY RUN MODE: Commands will be simulated but not executed"
+fi
+
+case "$COMMAND" in
     start)
-        start_runner
+        if [ "$DRY_RUN" = true ]; then
+            print_status "[DRY RUN] Would start GitHub runner service"
+        else
+            start_runner
+        fi
         ;;
     stop)
-        stop_runner
+        if [ "$DRY_RUN" = true ]; then
+            print_status "[DRY RUN] Would stop GitHub runner service"
+        else
+            stop_runner
+        fi
         ;;
     restart)
-        restart_runner
+        if [ "$DRY_RUN" = true ]; then
+            print_status "[DRY RUN] Would restart GitHub runner service"
+        else
+            restart_runner
+        fi
         ;;
     status)
-        show_status
+        if [ "$DRY_RUN" = true ]; then
+            print_status "[DRY RUN] Would check GitHub runner status"
+            print_status "[DRY RUN] Service: $SERVICE_NAME"
+            print_status "[DRY RUN] Directory: $RUNNER_DIR"
+        else
+            show_status
+        fi
         ;;
     logs)
-        show_logs
+        if [ "$DRY_RUN" = true ]; then
+            print_status "[DRY RUN] Would show logs for GitHub runner"
+        else
+            show_logs
+        fi
         ;;
     remove)
-        remove_runner
+        if [ "$DRY_RUN" = true ]; then
+            print_status "[DRY RUN] Would remove and unregister the runner"
+        else
+            remove_runner
+        fi
         ;;
     *)
         show_usage

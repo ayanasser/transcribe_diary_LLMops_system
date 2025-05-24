@@ -1,0 +1,155 @@
+name: Self-Hosted Runner Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_type:
+        description: 'Type of runner to test'
+        required: true
+        default: 'mlops'
+        type: choice
+        options:
+        - mlops
+        - gpu
+        - docker
+
+jobs:
+  test-basic:
+    name: Test Basic Runner Functions
+    runs-on: [self-hosted, linux, ${{ github.event.inputs.runner_type }}]
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: System information
+        run: |
+          echo "=== System Information ==="
+          echo "Hostname: $(hostname)"
+          echo "Date: $(date)"
+          echo "Kernel: $(uname -a)"
+          echo "=== CPU Information ==="
+          lscpu | grep -E "Model name|CPU\(s\)|CPU MHz"
+          echo "=== Memory Information ==="
+          free -h
+          echo "=== Disk Information ==="
+          df -h
+
+      - name: Test Python environment
+        run: |
+          echo "=== Python Environment ==="
+          python3 --version
+          pip3 --version
+          which python3
+
+      - name: Test Docker (if available)
+        run: |
+          echo "=== Docker Information ==="
+          if command -v docker &> /dev/null; then
+            docker --version
+            docker info
+            docker images
+          else
+            echo "Docker not available on this runner"
+          fi
+
+  test-ml-tools:
+    name: Test ML Tools
+    if: github.event.inputs.runner_type == 'mlops' || github.event.inputs.runner_type == 'gpu'
+    runs-on: [self-hosted, linux, ${{ github.event.inputs.runner_type }}]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python environment
+        run: |
+          # Source the ML environment if it exists
+          if [ -f "$HOME/activate-ml-env.sh" ]; then
+            source $HOME/activate-ml-env.sh
+          else
+            echo "Creating temporary environment"
+            python3 -m venv test_env
+            source test_env/bin/activate
+            pip install numpy torch pytest
+          fi
+
+      - name: Test ML Libraries
+        run: |
+          echo "=== Testing NumPy ==="
+          python -c "import numpy as np; print(f'NumPy version: {np.__version__}'); print(f'Random array: {np.random.rand(3,3)}')"
+          
+          echo -e "\n=== Testing PyTorch ==="
+          python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'Device count: {torch.cuda.device_count() if torch.cuda.is_available() else 0}')"
+          
+          if [ "${{ github.event.inputs.runner_type }}" == "gpu" ]; then
+            echo -e "\n=== Testing GPU ==="
+            if command -v nvidia-smi &> /dev/null; then
+              nvidia-smi
+            else
+              echo "nvidia-smi not available on this runner"
+            fi
+          fi
+
+  test-performance:
+    name: Test Performance
+    if: github.event.inputs.runner_type == 'gpu'
+    runs-on: [self-hosted, linux, gpu]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python environment
+        run: |
+          if [ -f "$HOME/activate-ml-env.sh" ]; then
+            source $HOME/activate-ml-env.sh
+          else
+            python3 -m venv test_env
+            source test_env/bin/activate
+            pip install numpy torch pytest
+          fi
+
+      - name: Run small benchmark
+        run: |
+          cat > benchmark.py << 'EOF'
+          import time
+          import torch
+          import numpy as np
+
+          print("Starting basic performance benchmark...")
+          
+          # CPU benchmark
+          start = time.time()
+          x = np.random.rand(1000, 1000)
+          for _ in range(10):
+              x = np.matmul(x, x)
+          cpu_time = time.time() - start
+          print(f"NumPy CPU matrix multiplication: {cpu_time:.4f} seconds")
+          
+          # PyTorch CPU
+          start = time.time()
+          x = torch.rand(1000, 1000)
+          for _ in range(10):
+              x = torch.matmul(x, x)
+          torch_cpu_time = time.time() - start
+          print(f"PyTorch CPU matrix multiplication: {torch_cpu_time:.4f} seconds")
+          
+          # PyTorch GPU (if available)
+          if torch.cuda.is_available():
+              start = time.time()
+              x = torch.rand(2000, 2000).cuda()
+              for _ in range(20):
+                  x = torch.matmul(x, x)
+              torch.cuda.synchronize()
+              torch_gpu_time = time.time() - start
+              print(f"PyTorch GPU matrix multiplication: {torch_gpu_time:.4f} seconds")
+              print(f"GPU speedup over CPU: {torch_cpu_time / torch_gpu_time:.2f}x")
+          else:
+              print("CUDA not available for testing")
+          EOF
+          
+          python benchmark.py

@@ -7,10 +7,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies with cache mount
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
-    apt-get update && apt-get install -y \
+# Install system dependencies (without BuildKit cache mounts)
+RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -27,9 +25,8 @@ FROM base as development
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies with cache mount
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements.txt
+# Install Python dependencies (without BuildKit cache mounts)
+RUN pip install -r requirements.txt
 
 # Copy application code
 COPY . .
@@ -53,9 +50,8 @@ FROM base as production
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies with cache mount
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir -r requirements.txt \
+# Install Python dependencies (without BuildKit cache mounts)
+RUN pip install --no-cache-dir -r requirements.txt \
     && pip install gunicorn==21.2.0
 
 # Copy application code
