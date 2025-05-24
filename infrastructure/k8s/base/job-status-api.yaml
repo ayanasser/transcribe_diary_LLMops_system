@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: job-status-api
+  labels:
+    app: job-status-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: job-status-api
+  template:
+    metadata:
+      labels:
+        app: job-status-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: transcription-app
+      containers:
+      - name: job-status-api
+        image: gcr.io/PROJECT_ID/job-status-api:latest
+        env:
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: redis_host
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: redis_password
+              optional: true
+        - name: STORAGE_TYPE
+          value: "gcs"
+        - name: STORAGE_GCS_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: gcs_bucket
+        - name: MONITORING_PROMETHEUS_PORT
+          value: "8080"
+        - name: OBSERVABILITY_OTLP_ENDPOINT
+          value: "http://otel-collector.monitoring:4317"
+        - name: OBSERVABILITY_ENABLE_TRACES
+          value: "true"
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: "/var/secrets/google/key.json"
+        ports:
+        - containerPort: 8001
+          name: http
+        - containerPort: 8080
+          name: metrics
+        volumeMounts:
+        - name: google-cloud-key
+          mountPath: /var/secrets/google
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 15
+          periodSeconds: 30
+      volumes:
+      - name: google-cloud-key
+        secret:
+          secretName: google-cloud-key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: job-status-api
+  labels:
+    app: job-status-api
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8001
+    protocol: TCP
+    name: http
+  selector:
+    app: job-status-api

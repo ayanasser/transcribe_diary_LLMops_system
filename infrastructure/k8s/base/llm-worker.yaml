@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-worker
+  labels:
+    app: llm-worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: llm-worker
+  template:
+    metadata:
+      labels:
+        app: llm-worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: transcription-app
+      containers:
+      - name: llm-worker
+        image: gcr.io/PROJECT_ID/llm-worker:latest
+        env:
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: redis_host
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: redis_password
+              optional: true
+        - name: STORAGE_TYPE
+          value: "gcs"
+        - name: STORAGE_GCS_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: gcs_bucket
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: openai_api_key
+        - name: OPENAI_MODEL
+          value: "gpt-3.5-turbo"
+        - name: OPENAI_MAX_TOKENS
+          value: "1000"
+        - name: OPENAI_TEMPERATURE
+          value: "0.2"
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: anthropic_api_key
+              optional: true
+        - name: MONITORING_PROMETHEUS_PORT
+          value: "8080"
+        - name: OBSERVABILITY_OTLP_ENDPOINT
+          value: "http://otel-collector.monitoring:4317"
+        - name: OBSERVABILITY_ENABLE_TRACES
+          value: "true"
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: "/var/secrets/google/key.json"
+        volumeMounts:
+        - name: google-cloud-key
+          mountPath: /var/secrets/google
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+      volumes:
+      - name: google-cloud-key
+        secret:
+          secretName: google-cloud-key

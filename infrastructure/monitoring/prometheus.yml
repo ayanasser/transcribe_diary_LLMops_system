@@ -1,0 +1,40 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'ingestion-api'
+    static_configs:
+      - targets: ['ingestion-api:8080']
+    metrics_path: '/metrics'
+
+  - job_name: 'job-status-api'
+    static_configs:
+      - targets: ['job-status-api:8080']
+    metrics_path: '/metrics'
+
+  - job_name: 'transcription-worker'
+    static_configs:
+      - targets: ['transcription-worker:8080']
+    metrics_path: '/metrics'
+
+  - job_name: 'llm-worker'
+    static_configs:
+      - targets: ['llm-worker:8080']
+    metrics_path: '/metrics'
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
