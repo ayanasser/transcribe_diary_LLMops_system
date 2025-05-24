@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transcription-worker
+  labels:
+    app: transcription-worker
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: transcription-worker
+  template:
+    metadata:
+      labels:
+        app: transcription-worker
+    spec:
+      serviceAccountName: transcription-app
+      containers:
+      - name: transcription-worker
+        image: gcr.io/PROJECT_ID/transcription-worker:latest
+        env:
+        - name: REDIS_HOST
+          value: "REDIS_HOST"
+        - name: STORAGE_TYPE
+          value: "gcs"
+        - name: STORAGE_GCS_BUCKET
+          value: "GCS_BUCKET"
+        - name: WHISPER_DEVICE
+          value: "cpu"
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: "/var/secrets/google/key.json"
+        volumeMounts:
+        - name: google-cloud-key
+          mountPath: /var/secrets/google
+        - name: whisper-cache
+          mountPath: /app/whisper_cache
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+      volumes:
+      - name: google-cloud-key
+        secret:
+          secretName: google-cloud-key
+      - name: whisper-cache
+        emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transcription-worker-gpu
+  labels:
+    app: transcription-worker-gpu
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: transcription-worker-gpu
+  template:
+    metadata:
+      labels:
+        app: transcription-worker-gpu
+    spec:
+      serviceAccountName: transcription-app
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+      nodeSelector:
+        role: gpu-worker
+      containers:
+      - name: transcription-worker-gpu
+        image: gcr.io/PROJECT_ID/transcription-worker-gpu:latest
+        env:
+        - name: REDIS_HOST
+          value: "REDIS_HOST"
+        - name: STORAGE_TYPE
+          value: "gcs"
+        - name: STORAGE_GCS_BUCKET
+          value: "GCS_BUCKET"
+        - name: WHISPER_DEVICE
+          value: "cuda"
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: "/var/secrets/google/key.json"
+        volumeMounts:
+        - name: google-cloud-key
+          mountPath: /var/secrets/google
+        - name: whisper-cache
+          mountPath: /app/whisper_cache
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+            nvidia.com/gpu: 1
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+            nvidia.com/gpu: 1
+      volumes:
+      - name: google-cloud-key
+        secret:
+          secretName: google-cloud-key
+      - name: whisper-cache
+        emptyDir: {}
